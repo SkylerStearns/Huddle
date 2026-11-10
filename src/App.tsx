@@ -2,7 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, StoreContext } from './data/store';
 import type { Person } from './data/types';
 import { person, isStaff, isSenior, waiting, canReview, activeSeason, coachesInScope, coachOf, ministryName, interviewFor, leadersOf, planDue } from './data/logic';
-import { NavContext, type Route, Icon, Avatar, Sheet } from './ui';
+import { NavContext, type Route, Icon, Avatar, Sheet, Seg } from './ui';
+
+type Theme = 'Auto' | 'Light' | 'Dark';
+const THEME_KEY = 'huddle-theme';
+function readTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'Light' || v === 'Dark' ? v : 'Auto';
+  } catch {
+    return 'Auto';
+  }
+}
 import { LeadersHome, LeaderDetail } from './screens/Leaders';
 import { InterviewsHome, CandidateDetail, InterviewForm } from './screens/Interviews';
 import { OverviewHome, CoachDetail } from './screens/Overview';
@@ -43,6 +54,15 @@ export default function App() {
   const [switching, setSwitching] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+
+  // Auto follows the phone's light/dark setting; Light and Dark override it.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'Auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme.toLowerCase());
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* not saved; still applies this visit */ }
+  }, [theme]);
 
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [userId]);
   useEffect(() => { window.scrollTo(0, 0); }, [tab, stack.length]);
@@ -90,7 +110,7 @@ export default function App() {
         <div className="shell">
           <header className="topbar gutter">
             <div className="brand">Huddle<small>Demo · sample people</small></div>
-            <button className="whoami" onClick={() => setSwitching(true)} aria-label={`Signed in as ${me.first} ${me.last}. Switch person`}>
+            <button className="whoami" onClick={() => setSwitching(true)} aria-label={`Signed in as ${me.first} ${me.last}. Settings and switch person`}>
               <Avatar p={me} size="sm" /><span>{me.first} · {me.role}</span>
             </button>
           </header>
@@ -121,7 +141,14 @@ export default function App() {
         </nav>
 
         {switching && (
-          <Sheet title="View the app as…" onClose={() => setSwitching(false)}>
+          <Sheet title="Settings" onClose={() => setSwitching(false)}>
+            <div className="field">
+              <span className="label">Appearance</span>
+              <Seg value={theme} options={['Auto', 'Light', 'Dark'] as const} onChange={setTheme} />
+              <span className="row-meta">{theme === 'Auto' ? 'Matches your phone’s light or dark setting.' : `Always ${theme.toLowerCase()}, whatever your phone is set to.`}</span>
+            </div>
+            <div className="divider" />
+            <h2>View the app as…</h2>
             <p className="sub">In the real app, everyone signs in with their own Google account and sees only their part. Pick a person to see their view.</p>
             {(['Staff', 'Senior Coach', 'Coach'] as const).map(role => (
               <div key={role} className="stack-sm">
@@ -134,7 +161,7 @@ export default function App() {
                         <span className="row-title">{p.first} {p.last}{p.id === me.id && <span className="pill accent">Current</span>}</span>
                         <span className="row-meta">
                           {ministryName(db, p.ministry)}
-                          {p.role !== 'Staff' ? ` · ${leadersOf(db, p.id).length} leaders` : ''}
+                          {p.role !== 'Staff' ? ` · ${leadersOf(db, p.id).length} ${leadersOf(db, p.id).length === 1 ? 'leader' : 'leaders'}` : ''}
                           {p.isInterviewer && p.role === 'Coach' ? ' · interviewer' : ''}
                         </span>
                       </div>
