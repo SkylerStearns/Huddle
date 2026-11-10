@@ -6,6 +6,18 @@ import { NavContext, type Route, Icon, Avatar, Sheet, Seg } from './ui';
 
 type Theme = 'Auto' | 'Light' | 'Dark';
 const THEME_KEY = 'huddle-theme';
+const TIP_KEY = 'huddle-install-tip-hidden';
+
+// Home-screen install: iPhone uses Share → Add to Home Screen; Android Chrome uses its menu.
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+const IS_IOS = /iPhone|iPad|iPod/.test(ua);
+const IS_PHONE = IS_IOS || /Android/.test(ua);
+const IN_FRAME = typeof window !== 'undefined' && window.parent !== window; // e.g. a preview, where installing doesn't apply
+const isInstalled = () =>
+  (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches) || (navigator as any).standalone === true;
+function readFlag(key: string) {
+  try { return localStorage.getItem(key) === '1'; } catch { return false; }
+}
 function readTheme(): Theme {
   try {
     const v = localStorage.getItem(THEME_KEY);
@@ -55,6 +67,10 @@ export default function App() {
   const [confirmReset, setConfirmReset] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [tipHidden, setTipHidden] = useState<boolean>(() => readFlag(TIP_KEY));
+  const installed = isInstalled();
+  const showTip = IS_PHONE && !installed && !IN_FRAME && !tipHidden;
+  const hideTip = () => { setTipHidden(true); try { localStorage.setItem(TIP_KEY, '1'); } catch { /* ignore */ } };
 
   // Auto follows the phone's light/dark setting; Light and Dark override it.
   useEffect(() => {
@@ -125,6 +141,18 @@ export default function App() {
               <button className="linkbtn" onClick={() => setConfirmReset(true)}>Reset demo</button>
             )}
           </div>
+          {showTip && (
+            <div className="gutter" style={{ paddingBlock: 12 }}>
+              <div className="callout accent">
+                <Icon name="plus" />
+                <div className="callout-body">
+                  <strong>Put Huddle on your home screen</strong>
+                  <span>{IS_IOS ? 'In Safari, tap Share, then Add to Home Screen. It opens full screen like an app.' : 'Open your browser menu and choose Add to Home screen or Install app.'}</span>
+                  <div><button className="btn" onClick={hideTip}>Got it</button></div>
+                </div>
+              </div>
+            </div>
+          )}
           <main className="gutter">{screen}</main>
         </div>
 
@@ -147,6 +175,20 @@ export default function App() {
               <Seg value={theme} options={['Auto', 'Light', 'Dark'] as const} onChange={setTheme} />
               <span className="row-meta">{theme === 'Auto' ? 'Matches your phone’s light or dark setting.' : `Always ${theme.toLowerCase()}, whatever your phone is set to.`}</span>
             </div>
+            {!IN_FRAME && (
+              <div className="field">
+                <span className="label">Home screen</span>
+                {installed ? (
+                  <span className="row-meta"><Icon name="check" size={14} /> Huddle is on your home screen.</span>
+                ) : (
+                  <span className="row-meta">
+                    {IS_IOS
+                      ? 'On iPhone: open Huddle in Safari, tap Share, then Add to Home Screen.'
+                      : 'On Android: open the browser menu and choose Add to Home screen or Install app. On iPhone: Safari → Share → Add to Home Screen.'}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="divider" />
             <h2>View the app as…</h2>
             <p className="sub">In the real app, everyone signs in with their own Google account and sees only their part. Pick a person to see their view.</p>
