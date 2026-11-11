@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, StoreContext } from './data/store';
 import type { Person } from './data/types';
-import { person, isStaff, isSenior, waiting, canReview, activeSeason, coachesInScope, coachOf, ministryName, interviewFor, leadersOf, planDue } from './data/logic';
+import { person, isStaff, isSenior, waiting, canReview, activeSeason, coachesInScope, coachOf, ministryName, interviewFor, leadersOf, planDue, freshness } from './data/logic';
 import { NavContext, type Route, Icon, Avatar, Sheet, Seg } from './ui';
 
 type Theme = 'Auto' | 'Light' | 'Dark';
@@ -15,6 +15,11 @@ const IS_PHONE = IS_IOS || /Android/.test(ua);
 const IN_FRAME = typeof window !== 'undefined' && window.parent !== window; // e.g. a preview, where installing doesn't apply
 const isInstalled = () =>
   (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches) || (navigator as any).standalone === true;
+// Badge on the home-screen icon. iPhone allows it only after the person turns on notifications.
+type BadgePermission = 'unsupported' | 'default' | 'granted' | 'denied';
+const badgeSupported = () => typeof navigator !== 'undefined' && 'setAppBadge' in navigator && typeof Notification !== 'undefined';
+const readBadgePermission = (): BadgePermission => (badgeSupported() ? (Notification.permission as BadgePermission) : 'unsupported');
+
 function readFlag(key: string) {
   try { return localStorage.getItem(key) === '1'; } catch { return false; }
 }
@@ -83,6 +88,30 @@ export default function App() {
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [userId]);
   useEffect(() => { window.scrollTo(0, 0); }, [tab, stack.length]);
 
+  // Register the background helper (not inside previews, which can't install apps).
+  useEffect(() => {
+    if (IN_FRAME || !('serviceWorker' in navigator) || !window.isSecureContext) return;
+    navigator.serviceWorker.register('sw.js').catch(() => { /* app still works without it */ });
+  }, []);
+
+  // Recount when the app comes back to the screen (dates may have moved on).
+  const [, setWake] = useState(0);
+  useEffect(() => {
+    const onShow = () => { if (document.visibilityState === 'visible') { setWake(n => n + 1); setBadgePermission(readBadgePermission()); } };
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
+  }, []);
+  const [badgePermission, setBadgePermission] = useState<BadgePermission>(readBadgePermission);
+  const turnOnBadge = async () => {
+    try {
+      const result = await Notification.requestPermission();
+      setBadgePermission(result as BadgePermission);
+      if (result === 'granted') nav.toast('Badge turned on');
+    } catch {
+      setBadgePermission(readBadgePermission());
+    }
+  };
+
   const nav = {
     push: (r: Route) => setStack(s => [...s, r]),
     back: () => setStack(s => s.slice(0, -1)),
@@ -102,8 +131,16 @@ export default function App() {
     cands.filter(c => canReview(me, c) && interviewFor(db, c.id)?.submitted && c.status === 'Submitted').length;
   const scope = new Set(coachesInScope(db, me).map(c => c.id));
   const overviewBadge = db.topics.filter(t => t.status === 'Open' && t.type === 'Urgent' && scope.has(coachOf(db, t.leader) ?? '')).length;
-  const leadersBadge = planDue(db, me.id).length;
+  const checkinsDue = leadersOf(db, me.id).filter(l => l.status === 'Active' && freshness(db, l).state === 'due').length;
+  const leadersBadge = planDue(db, me.id).length + checkinsDue;
   const badges: Partial<Record<Tab, number>> = { interviews: interviewBadge, overview: overviewBadge, leaders: leadersBadge };
+  const iconBadge = (tabs.includes('interviews') ? interviewBadge : 0) + (tabs.includes('overview') ? overviewBadge : 0) + (tabs.includes('leaders') ? leadersBadge : 0);
+
+  useEffect(() => {
+    if (badgePermission !== 'granted' || !badgeSupported()) return;
+    const n = navigator as Navigator & { setAppBadge: (n?: number) => Promise<void>; clearAppBadge: () => Promise<void> };
+    (iconBadge > 0 ? n.setAppBadge(iconBadge) : n.clearAppBadge()).catch(() => { /* not allowed here */ });
+  }, [iconBadge, badgePermission]);
 
   const top = stack[stack.length - 1];
   let screen: React.ReactNode;
@@ -186,6 +223,26 @@ export default function App() {
                       ? 'On iPhone: tap the Share button in Safari or Chrome, then Add to Home Screen.'
                       : 'On Android: open the browser menu and choose Add to Home screen or Install app. On iPhone: tap Share in Safari or Chrome, then Add to Home Screen.'}
                   </span>
+                )}
+              </div>
+            )}
+            {!IN_FRAME && (
+              <div className="field">
+                <span className="label">Badge on the app icon</span>
+                {badgePermission === 'granted' && (
+                  <span className="row-meta"><Icon name="check" size={14} /> On · showing {iconBadge} {iconBadge === 1 ? 'thing' : 'things'} that need you. It updates whenever you open Huddle.</span>
+                )}
+                {badgePermission === 'default' && (
+                  <>
+                    <span className="row-meta">Shows a number on Huddle’s icon for check-ins due, interviews waiting on you and urgent topics.</span>
+                    <div><button className="btn" onClick={turnOnBadge}><Icon name="bell" size={16} />Turn on badge</button></div>
+                  </>
+                )}
+                {badgePermission === 'denied' && (
+                  <span className="row-meta">Turned off. To turn it back on, open your phone’s Settings → Notifications → Huddle.</span>
+                )}
+                {badgePermission === 'unsupported' && (
+                  <span className="row-meta">{installed ? 'This phone or browser doesn’t support icon badges.' : 'Add Huddle to your home screen first, then open it from there to turn this on.'}</span>
                 )}
               </div>
             )}
