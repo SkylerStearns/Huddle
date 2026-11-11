@@ -10,6 +10,8 @@ export interface Person {
   role: Role; ministry?: string; status: PersonStatus; seniorCoach?: string;
   isInterviewer: boolean; canReview: boolean; sLevel?: number; lLevel?: number;
   rhythmWeeks?: number; staffNotes?: string; created: string;
+  /** Discord username, so the Huddle bot can send reminders and keep channel access in sync. */
+  discord?: string;
 }
 export interface Ministry { id: string; name: string }
 export interface Group {
@@ -74,7 +76,10 @@ export interface RosterMessage {
   id: string; sender: string; template?: string; push?: string; audience: string;
   channel: 'Email' | 'Text'; date: string;
 }
-export interface Space { id: string; name: string; link: string; roles: Role[]; ministry?: string; about: string }
+export interface Space {
+  id: string; platform: 'Discord' | 'Google Chat'; name: string; channel: string; link: string;
+  roles: Role[]; ministry?: string; private: boolean; about: string; autoPost: boolean;
+}
 
 export interface DB {
   people: Person[]; ministries: Ministry[]; groups: Group[]; assignments: Assignment[];

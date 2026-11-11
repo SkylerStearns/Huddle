@@ -4,7 +4,7 @@ import { sampleDB } from './sample';
 
 // Demo storage: everything lives in this browser. The real version swaps this
 // for calls to the Apps Script "back office", which reads and writes the Google Sheet.
-const DB_KEY = 'lgc-demo-db-v1';
+const DB_KEY = 'huddle-demo-db-v2';
 const USER_KEY = 'lgc-demo-user';
 
 function read<T>(key: string): T | null {
