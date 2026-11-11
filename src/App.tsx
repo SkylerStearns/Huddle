@@ -2,7 +2,30 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, StoreContext } from './data/store';
 import type { Person } from './data/types';
 import { person, isStaff, isSenior, waiting, canReview, activeSeason, coachesInScope, coachOf, ministryName, interviewFor, leadersOf, planDue } from './data/logic';
-import { NavContext, type Route, Icon, Avatar, Sheet } from './ui';
+import { NavContext, type Route, Icon, Avatar, Sheet, Seg } from './ui';
+
+type Theme = 'Auto' | 'Light' | 'Dark';
+const THEME_KEY = 'huddle-theme';
+const TIP_KEY = 'huddle-install-tip-hidden';
+
+// Home-screen install: iPhone uses Share → Add to Home Screen; Android Chrome uses its menu.
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+const IS_IOS = /iPhone|iPad|iPod/.test(ua);
+const IS_PHONE = IS_IOS || /Android/.test(ua);
+const IN_FRAME = typeof window !== 'undefined' && window.parent !== window; // e.g. a preview, where installing doesn't apply
+const isInstalled = () =>
+  (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches) || (navigator as any).standalone === true;
+function readFlag(key: string) {
+  try { return localStorage.getItem(key) === '1'; } catch { return false; }
+}
+function readTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'Light' || v === 'Dark' ? v : 'Auto';
+  } catch {
+    return 'Auto';
+  }
+}
 import { LeadersHome, LeaderDetail } from './screens/Leaders';
 import { InterviewsHome, CandidateDetail, InterviewForm } from './screens/Interviews';
 import { OverviewHome, CoachDetail } from './screens/Overview';
@@ -43,6 +66,19 @@ export default function App() {
   const [switching, setSwitching] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const [tipHidden, setTipHidden] = useState<boolean>(() => readFlag(TIP_KEY));
+  const installed = isInstalled();
+  const showTip = IS_PHONE && !installed && !IN_FRAME && !tipHidden;
+  const hideTip = () => { setTipHidden(true); try { localStorage.setItem(TIP_KEY, '1'); } catch { /* ignore */ } };
+
+  // Auto follows the phone's light/dark setting; Light and Dark override it.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'Auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme.toLowerCase());
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* not saved; still applies this visit */ }
+  }, [theme]);
 
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [userId]);
   useEffect(() => { window.scrollTo(0, 0); }, [tab, stack.length]);
@@ -90,7 +126,7 @@ export default function App() {
         <div className="shell">
           <header className="topbar gutter">
             <div className="brand">Huddle<small>Demo · sample people</small></div>
-            <button className="whoami" onClick={() => setSwitching(true)} aria-label={`Signed in as ${me.first} ${me.last}. Switch person`}>
+            <button className="whoami" onClick={() => setSwitching(true)} aria-label={`Signed in as ${me.first} ${me.last}. Settings and switch person`}>
               <Avatar p={me} size="sm" /><span>{me.first} · {me.role}</span>
             </button>
           </header>
@@ -105,6 +141,18 @@ export default function App() {
               <button className="linkbtn" onClick={() => setConfirmReset(true)}>Reset demo</button>
             )}
           </div>
+          {showTip && (
+            <div className="gutter" style={{ paddingBlock: 12 }}>
+              <div className="callout accent">
+                <Icon name="plus" />
+                <div className="callout-body">
+                  <strong>Put Huddle on your home screen</strong>
+                  <span>{IS_IOS ? 'In Safari, tap Share, then Add to Home Screen. It opens full screen like an app.' : 'Open your browser menu and choose Add to Home screen or Install app.'}</span>
+                  <div><button className="btn" onClick={hideTip}>Got it</button></div>
+                </div>
+              </div>
+            </div>
+          )}
           <main className="gutter">{screen}</main>
         </div>
 
@@ -121,7 +169,28 @@ export default function App() {
         </nav>
 
         {switching && (
-          <Sheet title="View the app as…" onClose={() => setSwitching(false)}>
+          <Sheet title="Settings" onClose={() => setSwitching(false)}>
+            <div className="field">
+              <span className="label">Appearance</span>
+              <Seg value={theme} options={['Auto', 'Light', 'Dark'] as const} onChange={setTheme} />
+              <span className="row-meta">{theme === 'Auto' ? 'Matches your phone’s light or dark setting.' : `Always ${theme.toLowerCase()}, whatever your phone is set to.`}</span>
+            </div>
+            {!IN_FRAME && (
+              <div className="field">
+                <span className="label">Home screen</span>
+                {installed ? (
+                  <span className="row-meta"><Icon name="check" size={14} /> Huddle is on your home screen.</span>
+                ) : (
+                  <span className="row-meta">
+                    {IS_IOS
+                      ? 'On iPhone: open Huddle in Safari, tap Share, then Add to Home Screen.'
+                      : 'On Android: open the browser menu and choose Add to Home screen or Install app. On iPhone: Safari → Share → Add to Home Screen.'}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="divider" />
+            <h2>View the app as…</h2>
             <p className="sub">In the real app, everyone signs in with their own Google account and sees only their part. Pick a person to see their view.</p>
             {(['Staff', 'Senior Coach', 'Coach'] as const).map(role => (
               <div key={role} className="stack-sm">
@@ -134,7 +203,7 @@ export default function App() {
                         <span className="row-title">{p.first} {p.last}{p.id === me.id && <span className="pill accent">Current</span>}</span>
                         <span className="row-meta">
                           {ministryName(db, p.ministry)}
-                          {p.role !== 'Staff' ? ` · ${leadersOf(db, p.id).length} leaders` : ''}
+                          {p.role !== 'Staff' ? ` · ${leadersOf(db, p.id).length} ${leadersOf(db, p.id).length === 1 ? 'leader' : 'leaders'}` : ''}
                           {p.isInterviewer && p.role === 'Coach' ? ' · interviewer' : ''}
                         </span>
                       </div>
