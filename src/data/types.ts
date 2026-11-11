@@ -76,9 +76,16 @@ export interface RosterMessage {
   id: string; sender: string; template?: string; push?: string; audience: string;
   channel: 'Email' | 'Text'; date: string;
 }
+// A Discord channel (or other chat space). The back office never sends webhook URLs to the app.
 export interface Space {
-  id: string; platform: 'Discord' | 'Google Chat'; name: string; channel: string; link: string;
-  roles: Role[]; ministry?: string; private: boolean; about: string; autoPost: boolean;
+  id: string; platform?: string; name: string; channel?: string; link?: string; roles: Role[];
+  ministries?: string[]; private?: boolean; postsHere?: boolean; hasWebhook?: boolean;
+  channelId?: string; inFeed?: boolean; forPerson?: string; kind?: 'Group' | 'Huddle'; about?: string;
+}
+// A post read from a Discord channel for the home-screen feed (read-only in Huddle).
+export interface Post {
+  id: string; text: string; at: string; author: string; images: string[];
+  reactions: number; replies: number; space: string; link: string;
 }
 
 export interface DB {

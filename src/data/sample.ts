@@ -243,11 +243,16 @@ export function sampleDB(): DB {
       { id: 'RM-02', sender: 'P-013', template: 'T-02', audience: 'All my leaders', channel: 'Text', date: ago(3) },
     ],
     spaces: [
-      { id: 'SP-01', platform: 'Discord', name: 'Announcements', channel: 'announcements', link: '', roles: ['Coach', 'Senior Coach', 'Staff'], private: false, autoPost: true, about: 'Staff updates for everyone: training dates, season kickoffs, reminders. Only staff post.' },
-      { id: 'SP-02', platform: 'Discord', name: 'Senior Coaches + Staff', channel: 'senior-coaches-and-staff', link: '', roles: ['Senior Coach', 'Staff'], private: true, autoPost: false, about: 'Planning, escalations and reassignments.' },
-      { id: 'SP-03', platform: 'Discord', name: '20s/30s Men Coaches', channel: '2030s-men-coaches', link: '', roles: ['Coach', 'Senior Coach'], ministry: 'MIN-01', private: true, autoPost: false, about: 'Day-to-day questions, prayer requests and encouragement.' },
-      { id: 'SP-04', platform: 'Discord', name: '20s/30s Women Coaches', channel: '2030s-women-coaches', link: '', roles: ['Coach', 'Senior Coach'], ministry: 'MIN-02', private: true, autoPost: false, about: 'Day-to-day questions, prayer requests and encouragement.' },
-      { id: 'SP-05', platform: 'Discord', name: 'College Coaches', channel: 'college-coaches', link: '', roles: ['Coach', 'Senior Coach'], ministry: 'MIN-03', private: true, autoPost: false, about: 'Day-to-day questions, prayer requests and encouragement.' },
+      { id: 'SP-01', platform: 'Discord', name: 'Young Adults Announcements', channel: 'announcements', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], inFeed: true, about: 'Staff updates for everyone. Only staff post; react and reply in threads.' },
+      { id: 'SP-02', platform: 'Discord', name: 'Staff', channel: 'staff', roles: ['Staff'], private: true, about: 'Staff-only conversation.' },
+      { id: 'SP-03', platform: 'Discord', name: 'Young Adults General', channel: 'general', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], about: 'Open message board for everyone.' },
+      { id: 'SP-04', platform: 'Discord', name: '20s/30s Announcements', channel: '2030s-announcements', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-01', 'MIN-02'], inFeed: true, postsHere: true, about: 'Updates for 20s/30s coaches and leaders.' },
+      { id: 'SP-05', platform: 'Discord', name: '20s/30s Senior Coaches', channel: '2030s-sr-coaches', roles: ['Senior Coach', 'Staff'], ministries: ['MIN-01', 'MIN-02'], private: true, inFeed: true, about: 'Planning, escalations and reassignments.' },
+      { id: 'SP-06', platform: 'Discord', name: '20s/30s Coaches', channel: '2030s-coaches', roles: ['Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-01', 'MIN-02'], private: true, inFeed: true, about: 'Day-to-day questions, prayer requests and encouragement.' },
+      { id: 'SP-07', platform: 'Discord', name: 'College Coaches', channel: 'college-coaches', roles: ['Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-03'], private: true, inFeed: true, about: 'Day-to-day questions, prayer requests and encouragement.' },
+      { id: 'SP-08', platform: 'Discord', name: 'Group A', channel: 'group-a', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-01'], private: true, inFeed: true, forPerson: 'P-002', kind: 'Group', about: 'Marcus and the coaches and leaders he oversees.' },
+      { id: 'SP-09', platform: 'Discord', name: 'Huddle A1', channel: 'huddle-a1', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-01'], private: true, forPerson: 'P-010', kind: 'Huddle', about: 'Ben and his leaders.' },
+      { id: 'SP-10', platform: 'Discord', name: 'Huddle A2', channel: 'huddle-a2', roles: ['Leader', 'Coach', 'Senior Coach', 'Staff'], ministries: ['MIN-01'], private: true, forPerson: 'P-011', kind: 'Huddle', about: 'Tyler and his leaders.' },
     ],
   };
 }

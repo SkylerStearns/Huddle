@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { useApp } from '../data/store';
-import { person, isStaff, ministryName, coachesInScope } from '../data/logic';
+import { person, isStaff, ministryName, coachesInScope, spacesFor, spaceLink } from '../data/logic';
 import { Icon, Empty, useNav } from '../ui';
 
 export function SpacesHome() {
-  const { db, userId, update } = useApp();
+  const { db, userId, update, guildId } = useApp();
   const nav = useNav();
   const me = person(db, userId)!;
   const staff = isStaff(me);
   const [editing, setEditing] = useState(!me.discord);
   const [handle, setHandle] = useState(me.discord ?? '');
-  const mine = db.spaces.filter(s => staff || (s.roles.includes(me.role) && (!s.ministry || s.ministry === me.ministry)));
+  const mine = spacesFor(db, me);
   const team = coachesInScope(db, me).filter(p => p.id !== me.id);
   const unlinked = team.filter(p => !p.discord);
+  const unconnected = mine.filter(s => !spaceLink(s, guildId)).length;
 
   const save = () => {
     const clean = handle.trim().replace(/^@/, '');
@@ -35,10 +36,10 @@ export function SpacesHome() {
           {me.discord && !editing && <button className="btn ghost" onClick={() => setEditing(true)}>Change</button>}
         </div>
         {me.discord && !editing ? (
-          <p><Icon name="check" size={15} /> Linked as <strong>@{me.discord}</strong>. Huddle sends your reminders here and keeps your channel access up to date.</p>
+          <p><Icon name="check" size={15} /> Linked as <strong>@{me.discord}</strong>. This is how staff know which Discord account is yours when they give out channel access.</p>
         ) : (
           <>
-            <p className="row-meta">Add your Discord username so Huddle can send you reminders and give you the right channels. No account yet? <a href="https://discord.com/download" target="_blank" rel="noreferrer">Get Discord</a>, it’s free.</p>
+            <p className="row-meta">Add your Discord username so you can be given the right channels. No account yet? <a href="https://discord.com/download" target="_blank" rel="noreferrer">Get Discord</a>, it’s free.</p>
             <div className="field">
               <label htmlFor="discord-handle">Discord username</label>
               <input id="discord-handle" type="text" autoCapitalize="none" autoCorrect="off" placeholder="e.g. bencarter" value={handle} onChange={e => setHandle(e.target.value)} />
@@ -52,24 +53,32 @@ export function SpacesHome() {
         <div className="section-head"><h2>Channels for you</h2><span className="count">{mine.length}</span></div>
         <div className="list">
           {mine.length === 0 && <Empty>No channels for your role yet.</Empty>}
-          {mine.map(s => (
-            <div key={s.id} className="row" style={{ alignItems: 'flex-start' }}>
-              <span className="tl-icon" aria-hidden="true"><Icon name={s.private ? 'lock' : s.name === 'Announcements' ? 'megaphone' : 'chat'} size={17} /></span>
-              <div className="row-main">
-                <span className="row-title">
-                  #{s.channel}
-                  {s.ministry && staff && <span className="pill">{ministryName(db, s.ministry)}</span>}
-                  {s.autoPost && <span className="pill accent">Huddle posts here</span>}
-                </span>
-                <span className="row-meta">{s.about}{s.private ? ' Private to these roles.' : ''}</span>
-                {s.link ? (
-                  <a className="btn" href={s.link} target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', marginTop: 4 }}>Open in Discord</a>
-                ) : (
-                  <span className="row-meta t-warn">Invite link not added yet</span>
-                )}
+          {mine.map(s => {
+            const href = spaceLink(s, guildId);
+            return (
+              <div key={s.id} className="row" style={{ alignItems: 'flex-start' }}>
+                <span className="tl-icon" aria-hidden="true"><Icon name={s.private ? 'lock' : s.inFeed ? 'megaphone' : 'chat'} size={17} /></span>
+                <div className="row-main">
+                  <span className="row-title">
+                    {s.channel ? `#${s.channel}` : s.name}
+                    {staff && !!s.ministries?.length && <span className="pill">{s.ministries.map(m => ministryName(db, m)).join(', ')}</span>}
+                    {s.postsHere && <span className="pill accent">Huddle posts here</span>}
+                  </span>
+                  <span className="row-meta">
+                    {s.about ?? s.name + '.'}
+                    {!s.about && s.forPerson && s.kind === 'Huddle' && ` ${person(db, s.forPerson)?.first ?? 'A coach'}’s huddle.`}
+                    {!s.about && s.forPerson && s.kind === 'Group' && ` ${person(db, s.forPerson)?.first ?? 'A senior coach'}’s group.`}
+                    {s.private ? ' Private to these people.' : ''}
+                  </span>
+                  {href ? (
+                    <a className="btn" href={href} target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', marginTop: 4 }}>Open in Discord</a>
+                  ) : (
+                    <span className="row-meta t-warn">Channel not connected yet</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -84,10 +93,10 @@ export function SpacesHome() {
             {unlinked.length > 0 && <span className="row-meta">Not linked yet: {unlinked.map(p => p.first).join(', ')}</span>}
             <div className="divider" />
             <ol className="stack-sm" style={{ margin: 0, paddingLeft: 18 }}>
-              <li>Create the church server with these channels and the Staff, Senior Coach and Coach roles.</li>
-              <li>Paste each channel’s invite link into the Spaces tab of the Huddle sheet.</li>
-              <li>Add a webhook to #announcements and paste it into the sheet. Messages you send from Huddle will post there too.</li>
-              <li>Later: add the Huddle bot to send reminders by direct message and keep roles in sync.</li>
+              <li>Create the server, channels and roles (see SETUP.md in the Huddle repo).</li>
+              <li>Paste each channel’s ID into Channel ID in the Spaces tab of the sheet{unconnected ? ` (${unconnected} still missing)` : ''}.</li>
+              <li>Set Show in App Feed to TRUE for channels whose posts should appear on the home screen.</li>
+              <li>Add a webhook to the channel marked Huddle Posts Here. New coach assignments and staff announcements post there.</li>
             </ol>
           </div>
         </section>
