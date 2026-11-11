@@ -9,7 +9,9 @@ export interface Person {
   id: string; first: string; last: string; email: string; phone: string;
   role: Role; ministry?: string; status: PersonStatus; seniorCoach?: string;
   isInterviewer: boolean; canReview: boolean; sLevel?: number; lLevel?: number;
-  rhythmWeeks?: number; staffNotes?: string; created: string; discord?: string;
+  rhythmWeeks?: number; staffNotes?: string; created: string;
+  /** Discord username, so the Huddle bot can send reminders and keep channel access in sync. */
+  discord?: string;
 }
 export interface Ministry { id: string; name: string }
 export interface Group {

@@ -7,7 +7,7 @@ import { call, getToken, load, SignInNeeded, signOut as clearSignIn } from './ap
 // Two modes:
 // - Demo: sample people, everything lives in this browser.
 // - Live: data comes from the Apps Script back office, and each change is sent back to the sheet.
-const DB_KEY = 'lgc-demo-db-v1';
+const DB_KEY = 'huddle-demo-db-v3'; // bump when the sample data's shape changes
 const USER_KEY = 'lgc-demo-user';
 
 function read<T>(key: string): T | null {

@@ -321,6 +321,12 @@ function save_(ctx, changes) {
       read_(table).forEach(function (r) { existing[r.id] = r; });
       (ch.upsert || []).forEach(function (row) {
         var before = existing[row.id];
+        // Anyone may set their own Discord username; everything else in People is staff-only.
+        if (table === 'people' && !ctx.staff) {
+          if (row.id !== ctx.me.id) throw new Error('You can’t change someone else’s details.');
+          upsertRow_('people', { id: row.id, discord: String(row.discord || '').replace(/^@/, '').trim() });
+          return;
+        }
         if (before && !canWrite_(ctx, table, before)) throw new Error('You can’t change that record.');
         if (!canWrite_(ctx, table, row)) throw new Error('You can’t save that record.');
         if (table === 'interviews') writeInterview_(row);
