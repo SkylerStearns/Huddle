@@ -44,7 +44,7 @@ Check your work with Server Settings → Roles → (a role) → **View Server As
 
 **Server default notifications**: Server name → Notification Settings → **Only @mentions**.
 
-**Copy IDs into the sheet.** Right-click the server icon → **Copy Server ID** and save it for part 3. Right-click each channel → **Copy Channel ID** and paste it into Spaces → **Channel ID** for that row.
+**Copy IDs into the sheet.** Right-click the server icon → **Copy Server ID** and save it for part 3. For channel IDs, the easy way: once part 3 is done, run **fillChannelIds** in the Apps Script editor and it fills in Spaces → **Channel ID** for every channel whose name matches. (By hand: right-click a channel → **Copy Channel ID**.)
 
 **Webhook for automatic posts.** On `#2030s-announcements`: Edit Channel → Integrations → Webhooks → New Webhook → name it "Huddle" → **Copy Webhook URL**. Paste it into Spaces → **Webhook URL** on the "20s/30s Announcements" row (the one with Huddle Posts Here = TRUE). New coach assignments are announced there, and staff can post announcements from Huddle's Messages tab.
 

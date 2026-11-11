@@ -495,3 +495,41 @@ function checkSetup() {
     });
   }
 }
+
+/**
+ * Run once from the editor after the bot is in the server and DISCORD_BOT_TOKEN and
+ * DISCORD_GUILD_ID are set. Looks up every channel in the server and writes its ID into
+ * Spaces > Channel ID wherever the Channel column matches the Discord channel name.
+ * The log lists anything it couldn't match.
+ */
+function fillChannelIds() {
+  var guild = prop_('DISCORD_GUILD_ID');
+  if (!guild || !prop_('DISCORD_BOT_TOKEN')) throw new Error('Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in Script Properties first.');
+  var channels = discordGet_('/guilds/' + guild + '/channels');
+  if (!channels) throw new Error('The bot could not list the server’s channels. Is it in the server, and is DISCORD_GUILD_ID right?');
+  var byName = {};
+  channels.filter(function (c) { return c.type === 0 || c.type === 5 || c.type === 15; }).forEach(function (c) {
+    var key = c.name.toLowerCase();
+    (byName[key] = byName[key] || []).push(c.id);
+  });
+  var t = sheetAndHeaders_('spaces');
+  var nameCol = t.headers.indexOf('Channel');
+  var idCol = t.headers.indexOf('Channel ID');
+  var rows = t.sh.getRange(2, 1, t.sh.getLastRow() - 1, t.headers.length).getValues();
+  var used = {};
+  rows.forEach(function (r, i) {
+    var name = String(r[nameCol]).replace(/^#/, '').trim().toLowerCase();
+    if (!name) return;
+    var ids = byName[name] || [];
+    if (ids.length === 1) {
+      t.sh.getRange(i + 2, idCol + 1).setValue("'" + ids[0]);
+      used[name] = true;
+      Logger.log('✓ #' + name);
+    } else if (ids.length > 1) {
+      Logger.log('? #' + name + ' matches ' + ids.length + ' channels. Rename one in Discord, or paste the right ID by hand.');
+    } else {
+      Logger.log('✗ #' + name + ' is not in Discord. Rename the channel to match, or fix the Channel column.');
+    }
+  });
+  Object.keys(byName).forEach(function (n) { if (!used[n]) Logger.log('· #' + n + ' is in Discord but not in the Spaces tab (fine if Huddle doesn’t need it).'); });
+}
