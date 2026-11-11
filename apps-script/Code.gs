@@ -535,22 +535,25 @@ function fillChannelIds() {
 }
 
 // ---------------------------------------------------------------- auto posts
-// Friendly Discord posts when something new shows up in the sheet. The "Auto Posts" tab holds the
-// wording and an on/off switch for each event; "Auto Post Log" records what has been posted so
-// nothing posts twice. A timer runs checkAutoPosts every 15 minutes (set up by setupAutoPosts).
+// Friendly Discord posts when something new shows up in the sheet. The "Auto Posts" tab holds, for
+// each event, where it posts, an on/off switch and the wording; "Auto Post Log" records what has
+// been posted so nothing posts twice. A timer runs checkAutoPosts every 15 minutes (setupAutoPosts).
+//
+// Events:  New coach · New senior coach · New leader · Leader moved
+// Posts To: Group channel · Huddle channel · Senior coaches channel
 
 var AUTO_LOG_TAB = 'Auto Post Log';
+var AUTO_EVENTS = ['New coach', 'New senior coach', 'New leader', 'Leader moved'];
 
-function autoPostSettings_(event) {
+function autoPostSettings_() {
+  var out = {};
   var sh = ss_().getSheetByName('Auto Posts');
-  if (!sh) return null;
-  var rows = sh.getDataRange().getValues();
-  for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === event) {
-      return { on: rows[i][2] === true || String(rows[i][2]).toUpperCase() === 'TRUE', message: String(rows[i][3] || '') };
-    }
-  }
-  return null;
+  if (!sh) return out;
+  sh.getDataRange().getValues().slice(1).forEach(function (r) {
+    var ev = String(r[0]).trim();
+    if (ev) out[ev] = { postsTo: String(r[1]).trim(), on: r[2] === true || String(r[2]).toUpperCase() === 'TRUE', message: String(r[3] || '') };
+  });
+  return out;
 }
 function autoLogged_() {
   var sh = ss_().getSheetByName(AUTO_LOG_TAB);
@@ -559,8 +562,8 @@ function autoLogged_() {
   sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) { done[r[0] + '|' + r[1]] = true; });
   return done;
 }
-function autoLog_(event, personId, where, note) {
-  ss_().getSheetByName(AUTO_LOG_TAB).appendRow([event, personId, new Date(), where, note || '']);
+function autoLog_(event, key, where, note) {
+  ss_().getSheetByName(AUTO_LOG_TAB).appendRow([event, key, new Date(), where, note || '']);
 }
 function fill_(template, vars) {
   return template.replace(/\{(\w+)\}/g, function (m, k) { return vars.hasOwnProperty(k) ? vars[k] : m; });
@@ -569,38 +572,78 @@ function channelMention_(space) {
   return space && space.channelId ? '<#' + space.channelId + '>' : (space ? '#' + space.channel : 'their huddle');
 }
 
-// The welcome message for one coach, and the group channel it goes to (or why it can't post).
-function coachWelcome_(coach, template) {
+// Who's involved, for filling in a message and choosing the channel.
+function autoContext_(ids) {
   var people = {};
   read_('people').forEach(function (p) { people[p.id] = p; });
-  var senior = people[coach.seniorCoach];
+  var leader = people[ids.leader], coach = people[ids.coach];
+  var senior = people[ids.senior || (coach && coach.seniorCoach)];
+  if (coach && coach.role === 'Senior Coach' && !ids.senior) senior = coach; // a senior coach coaching leaders directly
   var spaces = read_('spaces');
-  var group = spaces.filter(function (s) { return s.kind === 'Group' && s.forPerson === coach.seniorCoach; })[0];
-  var huddle = spaces.filter(function (s) { return s.kind === 'Huddle' && s.forPerson === coach.id; })[0];
-  if (!senior) return { skip: 'no senior coach' };
-  if (!group || !group.webhook) return { skip: 'no webhook on ' + (group ? group.name : 'their group channel') };
-  var text = fill_(template, {
-    coach: coach.first + ' ' + coach.last, coachFirst: coach.first,
-    seniorCoach: senior.first + ' ' + senior.last, seniorCoachFirst: senior.first,
-    group: group.name, huddle: channelMention_(huddle),
-  });
-  return { space: group, text: text };
+  var group = senior && spaces.filter(function (s) { return s.kind === 'Group' && s.forPerson === senior.id; })[0];
+  var huddle = coach && spaces.filter(function (s) { return s.kind === 'Huddle' && s.forPerson === coach.id; })[0];
+  var ministry = (senior || coach || leader || {}).ministry;
+  var srCoaches = spaces.filter(function (s) {
+    return !s.forPerson && s.roles.join(',') === 'Senior Coach,Staff' && (s.ministries || []).indexOf(ministry) >= 0;
+  })[0];
+  var name = function (p) { return p ? p.first + ' ' + p.last : ''; };
+  return {
+    channels: { 'Group channel': group, 'Huddle channel': huddle, 'Senior coaches channel': srCoaches },
+    vars: {
+      leader: name(leader), leaderFirst: leader ? leader.first : '',
+      coach: name(coach), coachFirst: coach ? coach.first : '',
+      seniorCoach: name(senior), seniorCoachFirst: senior ? senior.first : '',
+      group: group ? group.name : 'their group', huddle: channelMention_(huddle),
+    },
+  };
 }
 
-/** Runs on a timer. Posts a welcome for each active coach who hasn't been welcomed yet. */
+// Builds the post for one event, or says why it can't post yet.
+function autoPost_(setting, ids) {
+  var c = autoContext_(ids);
+  var space = c.channels[setting.postsTo];
+  if (!space) return { skip: 'no "' + setting.postsTo + '" channel in Spaces for them yet' };
+  if (!space.webhook) return { skip: 'no webhook on ' + space.name };
+  return { space: space, text: fill_(setting.message, c.vars) };
+}
+
+// Everything that should have a post: [event, log key, ids]
+function autoCandidates_() {
+  var out = [];
+  var people = read_('people');
+  var assignments = read_('assignments');
+  people.forEach(function (p) {
+    if (p.status !== 'Active') return;
+    if (p.role === 'Coach' && p.seniorCoach) out.push(['New coach', p.id, { coach: p.id }]);
+    if (p.role === 'Senior Coach') out.push(['New senior coach', p.id, { senior: p.id }]);
+  });
+  var hadEarlier = {};
+  assignments.forEach(function (a) { if (a.end) hadEarlier[a.leader] = true; });
+  assignments.forEach(function (a) {
+    if (a.end) return;
+    if (hadEarlier[a.leader]) out.push(['Leader moved', a.id, { leader: a.leader, coach: a.coach }]);
+    else out.push(['New leader', a.leader, { leader: a.leader, coach: a.coach }]);
+  });
+  return out;
+}
+
+/** Runs on a timer. Posts anything new that hasn't been posted yet. */
 function checkAutoPosts() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
   try {
     CACHE_ = {};
-    var setting = autoPostSettings_('New coach');
-    if (!setting || !setting.on) return;
+    var settings = autoPostSettings_();
     var done = autoLogged_();
-    read_('people').forEach(function (p) {
-      if (p.role !== 'Coach' || p.status !== 'Active' || !p.seniorCoach || done['New coach|' + p.id]) return;
-      var w = coachWelcome_(p, setting.message);
-      if (w.skip) { Logger.log('Not yet welcoming ' + p.first + ': ' + w.skip); return; } // tries again next run
-      if (postWebhook_(w.space.webhook, w.text)) autoLog_('New coach', p.id, w.space.name, w.text);
+    autoCandidates_().forEach(function (c) {
+      var setting = settings[c[0]];
+      if (!setting || !setting.on || done[c[0] + '|' + c[1]]) return;
+      var post = autoPost_(setting, c[2]);
+      if (post.skip) { Logger.log(c[0] + ' ' + c[1] + ' waiting: ' + post.skip); return; } // tries again next run
+      if (postWebhook_(post.space.webhook, post.text)) {
+        autoLog_(c[0], c[1], post.space.name, post.text);
+        done[c[0] + '|' + c[1]] = true;
+      }
     });
   } finally {
     lock.releaseLock();
@@ -608,28 +651,32 @@ function checkAutoPosts() {
 }
 
 /**
- * Run once from the editor. Marks everyone who is already a coach as welcomed (so turning this on
- * doesn't flood Discord), then starts the 15-minute timer.
+ * Run once from the editor (and again after adding a new event to Auto Posts). Marks everything
+ * that already exists as posted, so turning this on doesn't flood Discord, then starts the timer.
  */
 function setupAutoPosts() {
   if (!ss_().getSheetByName('Auto Posts')) throw new Error('Add the "Auto Posts" tab to the sheet first.');
   if (!ss_().getSheetByName(AUTO_LOG_TAB)) throw new Error('Add the "' + AUTO_LOG_TAB + '" tab to the sheet first.');
   var done = autoLogged_();
   var n = 0;
-  read_('people').forEach(function (p) {
-    if (p.role === 'Coach' && !done['New coach|' + p.id]) { autoLog_('New coach', p.id, '', 'Already a coach when auto posts started'); n++; }
+  autoCandidates_().forEach(function (c) {
+    if (!done[c[0] + '|' + c[1]]) { autoLog_(c[0], c[1], '', 'Already in place when auto posts started'); done[c[0] + '|' + c[1]] = true; n++; }
   });
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'checkAutoPosts') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('checkAutoPosts').timeBased().everyMinutes(15).create();
-  Logger.log('Marked ' + n + ' existing coaches as welcomed. Checking for new coaches every 15 minutes.');
+  Logger.log('Marked ' + n + ' existing people and assignments as already posted. Checking every 15 minutes.');
 }
 
-/** Run from the editor to see a welcome in Discord without adding anyone. Posts once, marked as a test. */
-function sendTestCoachWelcome() {
-  var setting = autoPostSettings_('New coach');
-  var coach = read_('people').filter(function (p) { return p.role === 'Coach' && p.seniorCoach; })[0];
-  var w = coachWelcome_(coach, setting ? setting.message : '');
-  if (w.skip) { Logger.log('Can’t post for ' + coach.first + ': ' + w.skip); return; }
-  Logger.log('Posting to ' + w.space.name + ':\n' + w.text);
-  Logger.log(postWebhook_(w.space.webhook, '🧪 Test: ' + w.text) ? 'Posted.' : 'Discord didn’t accept the post.');
+/** Run from the editor to see each kind of post in Discord without changing anything. Marked as a test. */
+function sendTestAutoPosts() {
+  var settings = autoPostSettings_();
+  var seen = {};
+  autoCandidates_().forEach(function (c) {
+    if (seen[c[0]] || !settings[c[0]]) return;
+    var post = autoPost_(settings[c[0]], c[2]);
+    if (post.skip) return;
+    seen[c[0]] = true;
+    Logger.log(c[0] + ' → ' + post.space.name + ': ' + (postWebhook_(post.space.webhook, '🧪 Test: ' + post.text) ? 'posted' : 'Discord didn’t accept it'));
+  });
+  AUTO_EVENTS.forEach(function (e) { if (!seen[e]) Logger.log(e + ': nothing to test with yet (or its channel has no webhook).'); });
 }

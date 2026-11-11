@@ -117,10 +117,17 @@ Add a row to **People** (Sign-in Email is the Google account they sign in with, 
 
 ## Auto posts to Discord
 
-Huddle can post a welcome when a new coach is added to the sheet. The wording and an on/off switch live in the **Auto Posts** tab; **Auto Post Log** records each post so nothing posts twice.
+Huddle posts a welcome in Discord when someone new shows up in the sheet. The **Auto Posts** tab has a row for each event, with where it posts, an on/off switch and the wording. **Auto Post Log** records each post so nothing posts twice.
 
-1. Give each senior coach's group channel (`#group-b`, etc.) a webhook, and paste it into that group's Spaces row (Kind = Group) under Webhook URL.
-2. In Apps Script, paste the latest Code.gs and appsscript.json, then run **setupAutoPosts** once. It marks everyone who's already a coach as welcomed and starts a check every 15 minutes.
-3. Optional: run **sendTestCoachWelcome** to see what a welcome looks like in Discord.
+| Event | When | Default channel |
+|---|---|---|
+| New coach | A Coach with a Senior Coach is added | Group channel |
+| New senior coach | A Senior Coach is added | Senior coaches channel |
+| New leader | A leader gets their first coach (Assignments) | Group channel |
+| Leader moved | A leader's coach changes (old assignment ended, new one added) | Group channel |
 
-After that, adding a row to People with Role = Coach, Status = Active and a Senior Coach is all it takes. Within 15 minutes, a welcome posts in that senior coach's group channel.
+"Posts To" can be **Group channel**, **Huddle channel** or **Senior coaches channel**. Whichever you pick needs a webhook on that channel's Spaces row.
+
+1. Give each group channel (`#group-b`, etc.) a webhook and paste it into that group's Spaces row (Kind = Group) under Webhook URL. The senior coaches channel already has one.
+2. In Apps Script, paste the latest Code.gs and appsscript.json, then run **setupAutoPosts**. It marks everyone already in the sheet as posted and starts a check every 15 minutes. Run it again whenever you add a new event row.
+3. Optional: run **sendTestAutoPosts** to see one test post per event.
