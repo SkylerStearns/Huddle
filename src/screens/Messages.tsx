@@ -3,6 +3,8 @@ import { useApp, uid } from '../data/store';
 import type { Person, Push, Template } from '../data/types';
 import { person, leadersOf, coachesInScope, isStaff, isSenior, fillTemplate, today, fmtDate, firstName, daysSince } from '../data/logic';
 import { Icon, Seg, Sheet, Empty, useNav } from '../ui';
+import { LIVE } from '../config';
+import { call } from '../data/api';
 
 type Channel = 'Email' | 'Text';
 
@@ -143,7 +145,13 @@ function Compose({ me, template, push, onClose }: { me: Person; template?: Templ
       d.rosterMessages.push({ id: rmId, sender: me.id, template: tid || undefined, push: push?.id, audience: handPick ? `${recipients.length} picked` : a?.label ?? '', channel, date: today() });
       if (toLeaders) for (const r of recipients) d.touchPoints.push({ id: uid('TP'), leader: r.id, coach: me.id, date: today(), type: 'Roster message', replied: false, rosterMessage: rmId });
     });
-    nav.toast(`Logged ${recipients.length} ${channel === 'Email' ? 'emails' : 'texts'}${chat ? ' and posted to Announcements' : ''}`);
+    const space = db.spaces.find(s => s.postsHere && (s.hasWebhook || !LIVE));
+    if (chat && space && LIVE) {
+      const generic = { 'first name': 'everyone', 'coach name': me.first, date, link };
+      const text = [fillTemplate(subject, generic), fillTemplate(body, generic)].filter(Boolean).join('\n\n');
+      call('post', { space: space.id, text }).then(() => nav.toast(`Posted to ${space.name}`)).catch(e => nav.toast(`Not posted to Discord: ${(e as Error).message}`));
+    }
+    nav.toast(`Logged ${recipients.length} ${channel === 'Email' ? 'emails' : 'texts'}${chat && space ? ` and posting to ${space.name}` : ''}`);
     onClose();
   };
   const linkFor = (p: Person) => {
@@ -231,7 +239,7 @@ function Compose({ me, template, push, onClose }: { me: Person; template?: Templ
       {isStaff(me) && !toLeaders && (
         <label className="checkline" style={{ borderTop: 0, padding: 0 }}>
           <input type="checkbox" checked={chat} onChange={e => setChat(e.target.checked)} />
-          <span className="row-main"><span className="row-title">Also post to the Announcements space</span><span className="row-meta">Posts automatically once the space is connected</span></span>
+          <span className="row-main"><span className="row-title">Also post to Discord announcements</span><span className="row-meta">Posts to the channel marked Huddle Posts Here in the sheet</span></span>
         </label>
       )}
       <button className="btn primary block" disabled={!recipients.length || !body.trim()} onClick={() => { setCursor(0); setStep('send'); }}>

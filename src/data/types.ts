@@ -9,7 +9,7 @@ export interface Person {
   id: string; first: string; last: string; email: string; phone: string;
   role: Role; ministry?: string; status: PersonStatus; seniorCoach?: string;
   isInterviewer: boolean; canReview: boolean; sLevel?: number; lLevel?: number;
-  rhythmWeeks?: number; staffNotes?: string; created: string;
+  rhythmWeeks?: number; staffNotes?: string; created: string; discord?: string;
 }
 export interface Ministry { id: string; name: string }
 export interface Group {
@@ -74,7 +74,17 @@ export interface RosterMessage {
   id: string; sender: string; template?: string; push?: string; audience: string;
   channel: 'Email' | 'Text'; date: string;
 }
-export interface Space { id: string; name: string; link: string; roles: Role[]; ministry?: string; about: string }
+// A Discord channel (or other chat space). The back office never sends webhook URLs to the app.
+export interface Space {
+  id: string; platform?: string; name: string; channel?: string; link?: string; roles: Role[];
+  ministries?: string[]; private?: boolean; postsHere?: boolean; hasWebhook?: boolean;
+  channelId?: string; inFeed?: boolean; forPerson?: string; kind?: 'Group' | 'Huddle'; about?: string;
+}
+// A post read from a Discord channel for the home-screen feed (read-only in Huddle).
+export interface Post {
+  id: string; text: string; at: string; author: string; images: string[];
+  reactions: number; replies: number; space: string; link: string;
+}
 
 export interface DB {
   people: Person[]; ministries: Ministry[]; groups: Group[]; assignments: Assignment[];

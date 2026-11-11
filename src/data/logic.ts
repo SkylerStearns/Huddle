@@ -1,4 +1,4 @@
-import type { DB, Person, Candidate, Party, PlanStep, TouchPoint, Interview } from './types';
+import type { DB, Person, Candidate, Party, PlanStep, TouchPoint, Interview, Space } from './types';
 import { ago } from './sample';
 
 export const STALL_DAYS = 7; // interviewer flag and candidate nudge, per the decisions doc
@@ -153,3 +153,22 @@ export function coachesInScope(db: DB, me: Person): Person[] {
   return [me];
 }
 export const activeSeason = (db: DB) => db.seasons.find(s => s.active);
+
+// ---------- Discord spaces ----------
+// Mirrors spaceVisible_ in apps-script/Code.gs. In the real app the back office has already
+// filtered the list; this keeps the demo honest too.
+export function spaceVisible(db: DB, me: Person, s: Space): boolean {
+  if (isStaff(me)) return true;
+  if (!s.roles.includes(me.role)) return false;
+  if (s.ministries?.length && !s.ministries.includes(me.ministry ?? '')) return false;
+  if (!s.forPerson) return true;
+  const owner = person(db, s.forPerson);
+  if (!owner) return false;
+  if (owner.id === me.id) return true;
+  // Group: a senior coach's channel with their coaches. Huddle: one coach's channel with their leaders.
+  if (s.kind === 'Group') return me.seniorCoach === owner.id;
+  return owner.seniorCoach === me.id; // the huddle of a coach I oversee
+}
+export const spacesFor = (db: DB, me: Person) => db.spaces.filter(s => spaceVisible(db, me, s));
+export const spaceLink = (s: Space, guildId: string) =>
+  s.channelId && guildId ? `https://discord.com/channels/${guildId}/${s.channelId}` : s.link || '';

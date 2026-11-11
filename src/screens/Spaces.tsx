@@ -1,42 +1,55 @@
 import React from 'react';
 import { useApp } from '../data/store';
-import { person, isStaff, ministryName } from '../data/logic';
+import { person, isStaff, ministryName, spacesFor, spaceLink } from '../data/logic';
 import { Icon, Empty } from '../ui';
 
 export function SpacesHome() {
-  const { db, userId } = useApp();
+  const { db, userId, guildId } = useApp();
   const me = person(db, userId)!;
-  const mine = db.spaces.filter(s => s.roles.includes(me.role) && (!s.ministry || isStaff(me) || s.ministry === me.ministry));
+  const mine = spacesFor(db, me);
+  const missingIds = mine.filter(s => !s.channelId && !s.link).length;
   return (
     <div className="page">
       <div className="page-head">
-        <span className="eyebrow">Google Chat</span>
+        <span className="eyebrow">Discord</span>
         <h1>Spaces</h1>
-        <p className="sub">Group conversations that replace long group texts. They open in the Chat tab of the Gmail app.</p>
+        <p className="sub">Group conversations live in Discord. These are the channels you can see; tap one to open it in the Discord app.</p>
       </div>
       <div className="list">
         {mine.length === 0 && <Empty>No spaces for your role yet.</Empty>}
-        {mine.map(s => (
-          <div key={s.id} className="row" style={{ alignItems: 'flex-start' }}>
-            <span className="tl-icon"><Icon name={s.name === 'Announcements' ? 'megaphone' : 'chat'} size={18} /></span>
-            <div className="row-main">
-              <span className="row-title">{s.name}{s.ministry && isStaff(me) && <span className="pill">{ministryName(db, s.ministry)}</span>}</span>
-              <span className="row-meta">{s.about}</span>
-              {s.link ? (
-                <a className="btn" href={s.link} target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', marginTop: 4 }}>Open space</a>
-              ) : (
-                <span className="row-meta t-warn">Join link not added yet</span>
-              )}
+        {mine.map(s => {
+          const href = spaceLink(s, guildId);
+          return (
+            <div key={s.id} className="row" style={{ alignItems: 'flex-start' }}>
+              <span className="tl-icon"><Icon name={s.inFeed && !s.forPerson ? 'megaphone' : s.private ? 'lock' : 'chat'} size={18} /></span>
+              <div className="row-main">
+                <span className="row-title">
+                  {s.name}
+                  {s.channel && <span className="pill">#{s.channel}</span>}
+                  {isStaff(me) && !!s.ministries?.length && <span className="pill">{s.ministries.map(m => ministryName(db, m)).join(', ')}</span>}
+                </span>
+                {s.about && <span className="row-meta">{s.about}</span>}
+                {s.forPerson && <span className="row-meta">For {person(db, s.forPerson)?.first ?? 'a coach'}’s people</span>}
+                {href ? (
+                  <a className="btn" href={href} target="_blank" rel="noreferrer" style={{ alignSelf: 'flex-start', marginTop: 4 }}>Open in Discord</a>
+                ) : (
+                  <span className="row-meta t-warn">Channel not connected yet</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {isStaff(me) && (
         <div className="callout">
           <Icon name="megaphone" />
           <div className="callout-body">
-            <strong>Connecting a space</strong>
-            <span>Paste each space’s join link into the Spaces tab of the sheet. Add the space’s webhook too, and announcements you send from Messages will post there automatically.</span>
+            <strong>Connecting a channel</strong>
+            <span>
+              In the sheet’s Spaces tab, paste each channel’s ID into Channel ID{missingIds ? ` (${missingIds} still missing)` : ''}.
+              Set Show in App Feed to TRUE for channels whose posts should appear on the home screen, and add a webhook to the channel marked
+              Huddle Posts Here so new coach assignments are announced automatically.
+            </span>
           </div>
         </div>
       )}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useStore, StoreContext } from './data/store';
+import { useStore, StoreContext, type Store } from './data/store';
+import { LIVE } from './config';
+import { tokenEmail } from './data/api';
 import type { Person } from './data/types';
 import { person, isStaff, isSenior, waiting, canReview, activeSeason, coachesInScope, coachOf, ministryName, interviewFor, leadersOf, planDue, freshness } from './data/logic';
 import { NavContext, type Route, Icon, Avatar, Sheet, Seg } from './ui';
@@ -37,6 +39,8 @@ import { OverviewHome, CoachDetail } from './screens/Overview';
 import { RosterHome } from './screens/Roster';
 import { MessagesHome } from './screens/Messages';
 import { SpacesHome } from './screens/Spaces';
+import { AnnouncementsCard } from './screens/Feed';
+import { SignInScreen } from './screens/SignIn';
 
 type Tab = 'overview' | 'leaders' | 'interviews' | 'roster' | 'messages' | 'spaces';
 const TAB_META: Record<Tab, { label: string; icon: string }> = {
@@ -62,6 +66,12 @@ const ROLE_BLURB: Record<string, string> = {
 
 export default function App() {
   const store = useStore();
+  if (LIVE && store.status !== 'ready')
+    return <SignInScreen status={store.status} error={store.error} onSignedIn={store.refresh} onSignOut={store.signOut} />;
+  return <Main store={store} />;
+}
+
+function Main({ store }: { store: Store }) {
   const { db, userId, setUserId, reset } = store;
   const me = person(db, userId) ?? db.people[0];
   const tabs = tabsFor(me);
@@ -122,6 +132,7 @@ export default function App() {
     },
   };
   const goTab = (t: string) => { setStack([]); setTab(t as Tab); };
+  useEffect(() => { if (store.syncNote) { nav.toast(store.syncNote); store.clearSyncNote(); } }, [store.syncNote]);
 
   // badge counts
   const season = activeSeason(db);
@@ -154,6 +165,7 @@ export default function App() {
   else if (tab === 'roster') screen = <RosterHome />;
   else if (tab === 'messages') screen = <MessagesHome />;
   else screen = <SpacesHome />;
+  const showFeed = !top && (tab === 'overview' || tab === 'leaders');
 
   const switchable = db.people.filter(p => p.role !== 'Leader' && p.status === 'Active');
 
@@ -162,12 +174,12 @@ export default function App() {
       <NavContext.Provider value={nav}>
         <div className="shell">
           <header className="topbar gutter">
-            <div className="brand">Huddle<small>Demo · sample people</small></div>
+            <div className="brand">Huddle<small>{LIVE ? ministryName(db, me.ministry) : 'Demo · sample people'}</small></div>
             <button className="whoami" onClick={() => setSwitching(true)} aria-label={`Signed in as ${me.first} ${me.last}. Settings and switch person`}>
               <Avatar p={me} size="sm" /><span>{me.first} · {me.role}</span>
             </button>
           </header>
-          <div className="demo-note gutter">
+          {!LIVE && <div className="demo-note gutter">
             <span>Every person here is made up. Changes stay in this browser only.</span>
             {confirmReset ? (
               <span style={{ display: 'inline-flex', gap: 10 }}>
@@ -177,7 +189,7 @@ export default function App() {
             ) : (
               <button className="linkbtn" onClick={() => setConfirmReset(true)}>Reset demo</button>
             )}
-          </div>
+          </div>}
           {showTip && (
             <div className="gutter" style={{ paddingBlock: 12 }}>
               <div className="callout accent">
@@ -190,7 +202,10 @@ export default function App() {
               </div>
             </div>
           )}
-          <main className="gutter">{screen}</main>
+          <main className="gutter">
+            {showFeed && <div style={{ paddingTop: 18 }}><AnnouncementsCard /></div>}
+            {screen}
+          </main>
         </div>
 
         <nav className="tabbar" aria-label="Main">
@@ -246,6 +261,17 @@ export default function App() {
                 )}
               </div>
             )}
+            {LIVE && (
+              <div className="field">
+                <span className="label">Account</span>
+                <span className="row-meta">Signed in as {tokenEmail()}</span>
+                <div className="btn-row">
+                  <button className="btn" onClick={() => { store.refresh(); setSwitching(false); }}>Reload from the sheet</button>
+                  <button className="btn" onClick={() => { setSwitching(false); store.signOut(); }}>Sign out</button>
+                </div>
+              </div>
+            )}
+            {!LIVE && <>
             <div className="divider" />
             <h2>View the app as…</h2>
             <p className="sub">In the real app, everyone signs in with their own Google account and sees only their part. Pick a person to see their view.</p>
@@ -269,6 +295,7 @@ export default function App() {
                 </div>
               </div>
             ))}
+            </>}
           </Sheet>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
