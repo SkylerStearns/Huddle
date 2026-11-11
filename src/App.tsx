@@ -147,7 +147,7 @@ export default function App() {
                 <Icon name="plus" />
                 <div className="callout-body">
                   <strong>Put Huddle on your home screen</strong>
-                  <span>{IS_IOS ? 'In Safari, tap Share, then Add to Home Screen. It opens full screen like an app.' : 'Open your browser menu and choose Add to Home screen or Install app.'}</span>
+                  <span>{IS_IOS ? 'Tap the Share button (in Safari or Chrome), then Add to Home Screen. It opens full screen like an app.' : 'Open your browser menu and choose Add to Home screen or Install app.'}</span>
                   <div><button className="btn" onClick={hideTip}>Got it</button></div>
                 </div>
               </div>
@@ -183,8 +183,8 @@ export default function App() {
                 ) : (
                   <span className="row-meta">
                     {IS_IOS
-                      ? 'On iPhone: open Huddle in Safari, tap Share, then Add to Home Screen.'
-                      : 'On Android: open the browser menu and choose Add to Home screen or Install app. On iPhone: Safari → Share → Add to Home Screen.'}
+                      ? 'On iPhone: tap the Share button in Safari or Chrome, then Add to Home Screen.'
+                      : 'On Android: open the browser menu and choose Add to Home screen or Install app. On iPhone: tap Share in Safari or Chrome, then Add to Home Screen.'}
                   </span>
                 )}
               </div>
