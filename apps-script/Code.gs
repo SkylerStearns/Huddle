@@ -8,8 +8,10 @@
  * Script Properties (Project Settings > Script Properties):
  *   DATA_SHEET_ID      ID of the "Life Group Leadership – App Data" sheet
  *   GOOGLE_CLIENT_ID   OAuth client ID used by the website's "Sign in with Google" button
- *   DISCORD_BOT_TOKEN  Bot token, used only to read announcement channels for the feed
  *   DISCORD_GUILD_ID   The Discord server's ID, used to build "View in Discord" links
+ *   DISCORD_RELAY_URL  The Huddle relay's address on Cloudflare (discord-relay/worker.js)
+ *   DISCORD_RELAY_KEY  The relay's shared password (same as RELAY_KEY on the relay)
+ * Discord blocks requests from Google's servers, so the bot token lives on the relay, not here.
  *
  * Deploy: Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone.
  */
@@ -406,16 +408,33 @@ function writeInterview_(iv) {
 }
 
 // ---------------------------------------------------------------- Discord
-function discordGet_(path) {
-  var res = UrlFetchApp.fetch('https://discord.com/api/v10' + path, {
-    headers: { Authorization: 'Bot ' + prop_('DISCORD_BOT_TOKEN') }, muteHttpExceptions: true,
+// Discord blocks requests from Google's servers, so when DISCORD_RELAY_URL is set, requests go
+// through the Huddle relay on Cloudflare (see discord-relay/), which holds the bot token.
+function relay_(payload) {
+  return UrlFetchApp.fetch(prop_('DISCORD_RELAY_URL').trim(), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'X-Relay-Key': prop_('DISCORD_RELAY_KEY').trim() },
+    payload: JSON.stringify(payload),
   });
-  if (res.getResponseCode() !== 200) return null;
+}
+function discordGet_(path) {
+  var res = prop_('DISCORD_RELAY_URL')
+    ? relay_({ path: path })
+    : UrlFetchApp.fetch('https://discord.com/api/v10' + path, {
+      headers: { Authorization: 'Bot ' + prop_('DISCORD_BOT_TOKEN').trim() }, muteHttpExceptions: true,
+    });
+  if (res.getResponseCode() !== 200) {
+    Logger.log('Discord ' + path + ' → ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+    return null;
+  }
   return JSON.parse(res.getContentText());
+}
+function discordReady_() {
+  return !!(prop_('DISCORD_RELAY_URL') || prop_('DISCORD_BOT_TOKEN'));
 }
 
 function feed_(ctx) {
-  if (!prop_('DISCORD_BOT_TOKEN')) return [];
+  if (!discordReady_()) return [];
   var guild = prop_('DISCORD_GUILD_ID');
   var cache = CacheService.getScriptCache();
   var posts = [];
@@ -448,6 +467,10 @@ function feed_(ctx) {
 
 function postWebhook_(url, text) {
   if (!url || !text) return false;
+  if (prop_('DISCORD_RELAY_URL')) {
+    var r = relay_({ webhook: url, content: String(text) });
+    return r.getResponseCode() === 200 && JSON.parse(r.getContentText()).status < 300;
+  }
   var res = UrlFetchApp.fetch(url, {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     payload: JSON.stringify({ content: String(text).slice(0, 1900), allowed_mentions: { parse: ['roles'] } }),
@@ -478,7 +501,7 @@ function announceAssignment_(a) {
 // ---------------------------------------------------------------- setup helpers (run once from the editor)
 /** Run this once from the editor to check the sheet and Discord settings. Results show in the log. */
 function checkSetup() {
-  ['DATA_SHEET_ID', 'GOOGLE_CLIENT_ID', 'DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID'].forEach(function (k) {
+  ['DATA_SHEET_ID', 'GOOGLE_CLIENT_ID', 'DISCORD_GUILD_ID', 'DISCORD_RELAY_URL', 'DISCORD_RELAY_KEY'].forEach(function (k) {
     Logger.log(k + ': ' + (prop_(k) ? 'set' : 'MISSING'));
   });
   Object.keys(TABLES).forEach(function (t) {
@@ -488,7 +511,7 @@ function checkSetup() {
     var missing = TABLES[t].fields.filter(function (f) { return headers.indexOf(f[1]) < 0; }).map(function (f) { return f[1]; });
     Logger.log(TABLES[t].tab + ': ' + read_(t).length + ' rows' + (missing.length ? ' · missing columns: ' + missing.join(', ') : ''));
   });
-  if (prop_('DISCORD_BOT_TOKEN')) {
+  if (discordReady_()) {
     read_('spaces').filter(function (s) { return s.channelId; }).forEach(function (s) {
       var ok = discordGet_('/channels/' + s.channelId);
       Logger.log('Discord ' + s.name + ': ' + (ok ? 'bot can read it' : 'bot CANNOT read it'));
@@ -504,7 +527,7 @@ function checkSetup() {
  */
 function fillChannelIds() {
   var guild = prop_('DISCORD_GUILD_ID');
-  if (!guild || !prop_('DISCORD_BOT_TOKEN')) throw new Error('Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in Script Properties first.');
+  if (!guild || !discordReady_()) throw new Error('Set DISCORD_GUILD_ID and the relay (or bot token) in Script Properties first.');
   var channels = discordGet_('/guilds/' + guild + '/channels');
   if (!channels) throw new Error('The bot could not list the server’s channels. Is it in the server, and is DISCORD_GUILD_ID right?');
   var byName = {};

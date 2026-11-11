@@ -7,7 +7,8 @@ The app runs as a demo until two settings in `src/config.ts` are filled in. This
 | Discord server ID | Apps Script property `DISCORD_GUILD_ID` |
 | Discord channel IDs | Sheet → Spaces → Channel ID |
 | Discord webhook URL | Sheet → Spaces → Webhook URL |
-| Discord bot token | Apps Script property `DISCORD_BOT_TOKEN` (never in the sheet or the code) |
+| Discord bot token | Cloudflare relay secret `BOT_TOKEN` (never in the sheet or the code) |
+| Relay address and password | Apps Script properties `DISCORD_RELAY_URL` and `DISCORD_RELAY_KEY` |
 | Google client ID | Apps Script property `GOOGLE_CLIENT_ID` and `src/config.ts` |
 | Apps Script web app URL | `src/config.ts` |
 
@@ -58,6 +59,18 @@ Check your work with Server Settings → Roles → (a role) → **View Server As
 
 ---
 
+**Relay (Discord blocks Google).** Discord turns away requests from Google's servers, so the back office reaches Discord through a small free relay on Cloudflare (`discord-relay/worker.js`), which holds the bot token:
+
+1. Sign up at <https://dash.cloudflare.com> (free plan).
+2. **Workers & Pages → Create → Create Worker**, name it `huddle-discord-relay`, **Deploy**.
+3. **Edit code**, replace everything with `discord-relay/worker.js`, **Deploy**.
+4. **Settings → Variables and Secrets → Add**, type **Secret**:
+   - `BOT_TOKEN`: the bot token
+   - `RELAY_KEY`: a long random password (a password manager can make one)
+5. Copy the Worker's address (`https://huddle-discord-relay.<you>.workers.dev`). Opening it in a browser should say "Huddle relay is running."
+
+In part 3, the Apps Script properties are `DISCORD_RELAY_URL` (that address) and `DISCORD_RELAY_KEY` (the same password) instead of a bot token.
+
 ## 2. Google sign-in client
 
 1. Go to <https://console.cloud.google.com> → project picker → **New Project** → "Huddle".
@@ -76,8 +89,8 @@ Check your work with Server Settings → Roles → (a role) → **View Server As
 4. Project Settings → **Script Properties** → add:
    - `DATA_SHEET_ID`: `1Pq3nsm8mGt2kTSlAEfbED2bHbYur1m48z-IuEFD-y78`
    - `GOOGLE_CLIENT_ID`: from part 2
-   - `DISCORD_BOT_TOKEN`: from part 1
    - `DISCORD_GUILD_ID`: the server ID from part 1
+   - `DISCORD_RELAY_URL` and `DISCORD_RELAY_KEY`: from the relay in part 1
 5. In the editor, pick **checkSetup** in the function menu and click **Run**. Approve the permissions (it's your own script). Open the log: every property should say "set", every tab should list its rows with no missing columns, and every Discord channel should say "bot can read it".
 6. **Deploy → New deployment** → type **Web app** → Execute as **Me** → Who has access **Anyone** → Deploy. Copy the **Web app URL** (ends in `/exec`).
 
