@@ -143,7 +143,7 @@ function Compose({ me, template, push, onClose }: { me: Person; template?: Templ
       d.rosterMessages.push({ id: rmId, sender: me.id, template: tid || undefined, push: push?.id, audience: handPick ? `${recipients.length} picked` : a?.label ?? '', channel, date: today() });
       if (toLeaders) for (const r of recipients) d.touchPoints.push({ id: uid('TP'), leader: r.id, coach: me.id, date: today(), type: 'Roster message', replied: false, rosterMessage: rmId });
     });
-    nav.toast(`Logged ${recipients.length} ${channel === 'Email' ? 'emails' : 'texts'}${chat ? ' and posted to Announcements' : ''}`);
+    nav.toast(`Logged ${recipients.length} ${channel === 'Email' ? 'emails' : 'texts'}${chat ? ' and posted to Discord #announcements' : ''}`);
     onClose();
   };
   const linkFor = (p: Person) => {
@@ -231,7 +231,7 @@ function Compose({ me, template, push, onClose }: { me: Person; template?: Templ
       {isStaff(me) && !toLeaders && (
         <label className="checkline" style={{ borderTop: 0, padding: 0 }}>
           <input type="checkbox" checked={chat} onChange={e => setChat(e.target.checked)} />
-          <span className="row-main"><span className="row-title">Also post to the Announcements space</span><span className="row-meta">Posts automatically once the space is connected</span></span>
+          <span className="row-main"><span className="row-title">Also post to Discord #announcements</span><span className="row-meta">Posts automatically once the channel’s webhook is added</span></span>
         </label>
       )}
       <button className="btn primary block" disabled={!recipients.length || !body.trim()} onClick={() => { setCursor(0); setStep('send'); }}>

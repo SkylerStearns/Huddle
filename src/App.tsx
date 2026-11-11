@@ -45,7 +45,7 @@ const TAB_META: Record<Tab, { label: string; icon: string }> = {
   interviews: { label: 'Interviews', icon: 'clipboard' },
   roster: { label: 'Roster', icon: 'swap' },
   messages: { label: 'Messages', icon: 'send' },
-  spaces: { label: 'Spaces', icon: 'chat' },
+  spaces: { label: 'Discord', icon: 'chat' },
 };
 
 function tabsFor(me: Person): Tab[] {
