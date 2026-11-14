@@ -8,8 +8,10 @@
  * Script Properties (Project Settings > Script Properties):
  *   DATA_SHEET_ID      ID of the "Life Group Leadership – App Data" sheet
  *   GOOGLE_CLIENT_ID   OAuth client ID used by the website's "Sign in with Google" button
- *   DISCORD_BOT_TOKEN  Bot token, used only to read announcement channels for the feed
  *   DISCORD_GUILD_ID   The Discord server's ID, used to build "View in Discord" links
+ *   DISCORD_RELAY_URL  Address of the Huddle relay on Cloudflare (discord-relay/worker.js)
+ *   DISCORD_RELAY_KEY  The relay's password (the same value as RELAY_KEY on the relay)
+ * The bot token lives on the relay, not here: Discord turns away requests from Apps Script.
  *
  * Deploy: Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone.
  */
@@ -406,40 +408,136 @@ function writeInterview_(iv) {
 }
 
 // ---------------------------------------------------------------- Discord
-function discordGet_(path) {
-  var res = UrlFetchApp.fetch('https://discord.com/api/v10' + path, {
-    headers: { Authorization: 'Bot ' + prop_('DISCORD_BOT_TOKEN') }, muteHttpExceptions: true,
+// Reading: Discord turns away requests that come from Apps Script, so reads go through the Huddle
+// relay on Cloudflare (discord-relay/worker.js), which holds the bot token.
+// Posting: channel webhooks work straight from here (postWebhook_ below).
+var RELAY_MAX_PATHS = 25;
+function discordReady_() {
+  return !!(prop_('DISCORD_RELAY_URL') && prop_('DISCORD_RELAY_KEY'));
+}
+/** Asks Discord for each path through the relay. Returns one answer per path, or null where it failed. */
+function relay_(paths) {
+  var out = [];
+  for (var i = 0; i < paths.length; i += RELAY_MAX_PATHS) {
+    out = out.concat(relayBatch_(paths.slice(i, i + RELAY_MAX_PATHS)));
+  }
+  return out;
+}
+function relayBatch_(paths) {
+  var none = paths.map(function () { return null; });
+  var res;
+  try {
+    res = UrlFetchApp.fetch(prop_('DISCORD_RELAY_URL').trim(), {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'X-Relay-Key': prop_('DISCORD_RELAY_KEY').trim() },
+      payload: JSON.stringify({ paths: paths }),
+    });
+  } catch (err) {
+    Logger.log('Relay could not be reached: ' + err);
+    return none;
+  }
+  if (res.getResponseCode() !== 200) {
+    Logger.log('Relay → ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+    return none;
+  }
+  var results;
+  try { results = JSON.parse(res.getContentText()).results || []; } catch (err) { return none; }
+  return paths.map(function (path, i) {
+    var r = results[i];
+    if (r && r.status === 200 && r.body) return r.body;
+    Logger.log('Discord ' + path + ' → ' + (r ? r.status + ' ' + JSON.stringify(r.body).slice(0, 200) : 'no answer'));
+    return null;
   });
-  if (res.getResponseCode() !== 200) return null;
-  return JSON.parse(res.getContentText());
+}
+function discordGet_(path) {
+  return relay_([path])[0];
 }
 
+var FEED_FRESH_SECONDS = 90;   // a channel's posts are reused this long before asking Discord again
+var FEED_KEEP_SECONDS = 21600; // last good copy (6 hours), shown if Discord or the relay has a hiccup
+
+// Discord stores "@Coaches" as <@&123…>. This turns those codes back into readable names.
+function feedText_(m, roleNames, channelNames) {
+  var users = {};
+  (m.mentions || []).forEach(function (u) { users[u.id] = u.global_name || u.username; });
+  return String(m.content || '')
+    .replace(/<@&(\d+)>/g, function (x, id) { return '@' + String(roleNames[id] || 'role').replace(/^@/, ''); })
+    .replace(/<@!?(\d+)>/g, function (x, id) { return '@' + (users[id] || 'someone'); })
+    .replace(/<#(\d+)>/g, function (x, id) { return '#' + (channelNames[id] || 'channel'); })
+    .replace(/<a?:(\w+):\d+>/g, ':$1:')
+    .replace(/<t:(\d+)(?::[a-zA-Z])?>/g, function (x, secs) {
+      return Utilities.formatDate(new Date(Number(secs) * 1000), Session.getScriptTimeZone(), 'EEE, MMM d, h:mm a');
+    });
+}
+function feedPost_(m, roleNames, channelNames) {
+  return {
+    id: m.id, text: feedText_(m, roleNames, channelNames), at: m.timestamp,
+    author: (m.member && m.member.nick) || m.author.global_name || m.author.username,
+    images: (m.attachments || []).filter(function (a) { return /^image\//.test(a.content_type || ''); }).map(function (a) { return a.url; }),
+    reactions: (m.reactions || []).reduce(function (n, r) { return n + (r.count || 0); }, 0),
+    replies: m.thread ? (m.thread.message_count || 0) : 0,
+  };
+}
+
+/** The latest posts from the Discord channels this person is allowed to see. Read-only. */
 function feed_(ctx) {
-  if (!prop_('DISCORD_BOT_TOKEN')) return [];
+  if (!discordReady_()) return [];
   var guild = prop_('DISCORD_GUILD_ID');
   var cache = CacheService.getScriptCache();
-  var posts = [];
-  read_('spaces').filter(function (s) { return s.inFeed && s.channelId && spaceVisible_(ctx, s); }).forEach(function (s) {
-    var key = 'feed_' + s.channelId;
-    var hit = cache.get(key);
-    var msgs = hit ? JSON.parse(hit) : null;
-    if (!msgs) {
-      var raw = discordGet_('/channels/' + s.channelId + '/messages?limit=10') || [];
-      msgs = raw.filter(function (m) { return m.type === 0 || m.type === 19 || m.type === 20; }).map(function (m) {
-        var reactions = (m.reactions || []).reduce(function (n, r) { return n + (r.count || 0); }, 0);
-        return {
-          id: m.id, text: m.content || '', at: m.timestamp,
-          author: (m.member && m.member.nick) || m.author.global_name || m.author.username,
-          images: (m.attachments || []).filter(function (a) { return /^image\//.test(a.content_type || ''); }).map(function (a) { return a.url; }),
-          reactions: reactions, replies: m.thread ? (m.thread.message_count || 0) : 0,
-        };
-      });
-      cache.put(key, JSON.stringify(msgs), 60);
+  var allSpaces = read_('spaces');
+  var spaces = allSpaces.filter(function (s) { return s.inFeed && s.channelId && spaceVisible_(ctx, s); });
+  if (!spaces.length) return [];
+
+  var byChannel = {};
+  var hits = cache.getAll(spaces.map(function (s) { return 'feed_' + s.channelId; }));
+  Object.keys(hits).forEach(function (k) { byChannel[k.slice(5)] = JSON.parse(hits[k]); });
+  var missing = [];
+  spaces.forEach(function (s) { if (!byChannel[s.channelId] && missing.indexOf(s.channelId) < 0) missing.push(s.channelId); });
+
+  if (missing.length) {
+    // One trip to the relay for every channel that needs refreshing (plus role names, if we don't have them)
+    var roleHit = cache.get('feed_roles');
+    var paths = missing.map(function (id) { return '/channels/' + id + '/messages?limit=10'; });
+    var askRoles = !roleHit && !!guild;
+    if (askRoles) paths.push('/guilds/' + guild + '/roles');
+    var answers = relay_(paths);
+
+    var roleNames = roleHit ? JSON.parse(roleHit) : {};
+    if (askRoles && answers[missing.length]) {
+      answers[missing.length].forEach(function (r) { roleNames[r.id] = r.name; });
+      cache.put('feed_roles', JSON.stringify(roleNames), FEED_KEEP_SECONDS);
     }
-    msgs.forEach(function (m) {
-      m.space = s.name;
-      m.link = 'https://discord.com/channels/' + guild + '/' + s.channelId + '/' + m.id;
-      posts.push(m);
+    var channelNames = {};
+    allSpaces.forEach(function (s) { if (s.channelId) channelNames[s.channelId] = String(s.channel || '').replace(/^#/, ''); });
+
+    var fresh = {}, keep = {}, failed = [];
+    missing.forEach(function (id, i) {
+      if (!answers[i]) { failed.push(id); return; }
+      byChannel[id] = answers[i]
+        .filter(function (m) { return m.type === 0 || m.type === 19 || m.type === 20; })
+        .map(function (m) { return feedPost_(m, roleNames, channelNames); });
+      var text = JSON.stringify(byChannel[id]);
+      fresh['feed_' + id] = text;
+      keep['feedkeep_' + id] = text;
+    });
+    if (Object.keys(fresh).length) {
+      cache.putAll(fresh, FEED_FRESH_SECONDS);
+      cache.putAll(keep, FEED_KEEP_SECONDS);
+    }
+    if (failed.length) {
+      // Discord or the relay didn't answer: show the last good copy rather than an empty feed
+      var old = cache.getAll(failed.map(function (id) { return 'feedkeep_' + id; }));
+      failed.forEach(function (id) { if (old['feedkeep_' + id]) byChannel[id] = JSON.parse(old['feedkeep_' + id]); });
+    }
+  }
+
+  var posts = [];
+  spaces.forEach(function (s) {
+    (byChannel[s.channelId] || []).forEach(function (m) {
+      posts.push({
+        id: m.id, text: m.text, at: m.at, author: m.author, images: m.images, reactions: m.reactions, replies: m.replies,
+        space: s.name, link: 'https://discord.com/channels/' + guild + '/' + s.channelId + '/' + m.id,
+      });
     });
   });
   posts.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
@@ -478,7 +576,7 @@ function announceAssignment_(a) {
 // ---------------------------------------------------------------- setup helpers (run once from the editor)
 /** Run this once from the editor to check the sheet and Discord settings. Results show in the log. */
 function checkSetup() {
-  ['DATA_SHEET_ID', 'GOOGLE_CLIENT_ID', 'DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID'].forEach(function (k) {
+  ['DATA_SHEET_ID', 'GOOGLE_CLIENT_ID', 'DISCORD_GUILD_ID', 'DISCORD_RELAY_URL', 'DISCORD_RELAY_KEY'].forEach(function (k) {
     Logger.log(k + ': ' + (prop_(k) ? 'set' : 'MISSING'));
   });
   Object.keys(TABLES).forEach(function (t) {
@@ -488,23 +586,33 @@ function checkSetup() {
     var missing = TABLES[t].fields.filter(function (f) { return headers.indexOf(f[1]) < 0; }).map(function (f) { return f[1]; });
     Logger.log(TABLES[t].tab + ': ' + read_(t).length + ' rows' + (missing.length ? ' · missing columns: ' + missing.join(', ') : ''));
   });
-  if (prop_('DISCORD_BOT_TOKEN')) {
-    read_('spaces').filter(function (s) { return s.channelId; }).forEach(function (s) {
-      var ok = discordGet_('/channels/' + s.channelId);
-      Logger.log('Discord ' + s.name + ': ' + (ok ? 'bot can read it' : 'bot CANNOT read it'));
-    });
-  }
+  if (!discordReady_()) { Logger.log('Announcements feed: off until DISCORD_RELAY_URL and DISCORD_RELAY_KEY are set.'); return; }
+  var spaces = read_('spaces').filter(function (s) { return s.channelId; });
+  var seen = relay_(spaces.map(function (s) { return '/channels/' + s.channelId; }));
+  spaces.forEach(function (s, i) {
+    Logger.log('Discord ' + s.name + ': ' + (seen[i] ? 'bot can read it' : 'bot CANNOT read it'));
+  });
+  // Can the bot read what the posts say? Without Message Content Intent, Discord blanks the text.
+  var feedSpaces = spaces.filter(function (s) { return s.inFeed; });
+  var posts = [];
+  relay_(feedSpaces.map(function (s) { return '/channels/' + s.channelId + '/messages?limit=5'; })).forEach(function (list) {
+    (list || []).forEach(function (m) { if (m.type === 0 || m.type === 19) posts.push(m); });
+  });
+  var blank = posts.filter(function (m) { return !m.content && !(m.attachments || []).length && !(m.embeds || []).length; });
+  if (!posts.length) Logger.log('Announcements feed: no posts in the feed channels yet. Post one in Discord, then run this again.');
+  else if (blank.length === posts.length) Logger.log('Announcements feed: read ' + posts.length + ' posts but their text is BLANK. Turn on Message Content Intent for the bot (Discord developer portal > Bot).');
+  else Logger.log('Announcements feed: read ' + posts.length + ' posts and their text is coming through.');
 }
 
 /**
- * Run once from the editor after the bot is in the server and DISCORD_BOT_TOKEN and
+ * Run once from the editor after the bot is in the server and the relay and
  * DISCORD_GUILD_ID are set. Looks up every channel in the server and writes its ID into
  * Spaces > Channel ID wherever the Channel column matches the Discord channel name.
  * The log lists anything it couldn't match.
  */
 function fillChannelIds() {
   var guild = prop_('DISCORD_GUILD_ID');
-  if (!guild || !prop_('DISCORD_BOT_TOKEN')) throw new Error('Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in Script Properties first.');
+  if (!guild || !discordReady_()) throw new Error('Set DISCORD_GUILD_ID, DISCORD_RELAY_URL and DISCORD_RELAY_KEY in Script Properties first.');
   var channels = discordGet_('/guilds/' + guild + '/channels');
   if (!channels) throw new Error('The bot could not list the server’s channels. Is it in the server, and is DISCORD_GUILD_ID right?');
   var byName = {};

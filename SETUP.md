@@ -7,7 +7,8 @@ The app runs as a demo until two settings in `src/config.ts` are filled in. This
 | Discord server ID | Apps Script property `DISCORD_GUILD_ID` |
 | Discord channel IDs | Sheet → Spaces → Channel ID |
 | Discord webhook URL | Sheet → Spaces → Webhook URL |
-| Discord bot token | Apps Script property `DISCORD_BOT_TOKEN` (never in the sheet or the code) |
+| Discord bot token | Cloudflare relay secret `BOT_TOKEN` (never in the sheet or the code) |
+| Relay address and password | Apps Script properties `DISCORD_RELAY_URL` and `DISCORD_RELAY_KEY` |
 | Google client ID | Apps Script property `GOOGLE_CLIENT_ID` and `src/config.ts` |
 | Apps Script web app URL | `src/config.ts` |
 
@@ -56,6 +57,18 @@ Check your work with Server Settings → Roles → (a role) → **View Server As
 4. **OAuth2** → **URL Generator** → tick **bot** → under permissions tick **View Channels** and **Read Message History** → open the generated link → add it to your server.
 5. In Discord, give the bot's role access to every private channel whose posts should appear in the app (rows with Show in App Feed = TRUE).
 
+**Relay, so the app can show announcements.** Discord turns away requests that come from Google Apps Script, so the back office can't read channels itself. It asks a small relay instead, and the relay asks Discord. The relay runs free on Cloudflare, only reads (it can't post), and holds the bot token. The code is `discord-relay/worker.js`.
+
+1. Sign up at <https://dash.cloudflare.com> (free plan, no card needed).
+2. **Workers & Pages → Create → Create Worker** (pick "Hello World" if it asks for a starting point). Name it `huddle-discord-relay` and click **Deploy**.
+3. Click **Edit code**, replace everything with the contents of `discord-relay/worker.js`, and click **Deploy**.
+4. Back on the Worker's page: **Settings → Variables and Secrets → Add**. Add two, each with type **Secret**:
+   - `BOT_TOKEN`: the bot token from the step above
+   - `RELAY_KEY`: a long random password (a password manager can make one). You'll paste the same value into Apps Script in part 3.
+5. Copy the Worker's address (`https://huddle-discord-relay.<your-name>.workers.dev`). Opening it in a browser should say "Huddle relay is running."
+
+Posting to Discord (welcomes, staff announcements) doesn't use the relay. That goes through channel webhooks, which Discord accepts from Google.
+
 ---
 
 ## 2. Google sign-in client
@@ -76,9 +89,10 @@ Check your work with Server Settings → Roles → (a role) → **View Server As
 4. Project Settings → **Script Properties** → add:
    - `DATA_SHEET_ID`: `1Pq3nsm8mGt2kTSlAEfbED2bHbYur1m48z-IuEFD-y78`
    - `GOOGLE_CLIENT_ID`: from part 2
-   - `DISCORD_BOT_TOKEN`: from part 1
    - `DISCORD_GUILD_ID`: the server ID from part 1
-5. In the editor, pick **checkSetup** in the function menu and click **Run**. Approve the permissions (it's your own script). Open the log: every property should say "set", every tab should list its rows with no missing columns, and every Discord channel should say "bot can read it".
+   - `DISCORD_RELAY_URL`: the relay's address from part 1
+   - `DISCORD_RELAY_KEY`: the same password you saved as `RELAY_KEY` on the relay
+5. In the editor, pick **checkSetup** in the function menu and click **Run**. Approve the permissions (it's your own script). Open the log: every property should say "set", every tab should list its rows with no missing columns, and every Discord channel should say "bot can read it". The last line should say the announcements' text is coming through. If it says the text is blank, turn on **Message Content Intent** for the bot (part 1).
 6. **Deploy → New deployment** → type **Web app** → Execute as **Me** → Who has access **Anyone** → Deploy. Copy the **Web app URL** (ends in `/exec`).
 
 "Anyone" only means the URL accepts requests. The script turns away anyone without a valid Huddle sign-in, and only returns what that person is allowed to see.
